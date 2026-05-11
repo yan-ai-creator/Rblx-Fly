@@ -31,16 +31,13 @@ local function getroot()
 end
 
 -- =========================
--- ULTRA RELIABLE NOCLIP
+-- NOCLIP SYSTEM
 -- =========================
 local function applyNoclipToCharacter(char)
     if not char then return end
-    
     for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if originalCollide[part] == nil then
-                originalCollide[part] = part.CanCollide
-            end
+        if part:IsA("BasePart") and originalCollide[part] == nil then
+            originalCollide[part] = part.CanCollide
             part.CanCollide = false
         end
     end
@@ -54,7 +51,6 @@ local function enableNoclip()
 
     applyNoclipToCharacter(char)
 
-    -- Dynamic new parts
     noclipConnection = char.DescendantAdded:Connect(function(desc)
         if desc:IsA("BasePart") then
             originalCollide[desc] = desc.CanCollide
@@ -78,7 +74,7 @@ local function disableNoclip()
 end
 
 -- =========================
--- GUI (Same as before)
+-- GUI
 -- =========================
 local gui = Instance.new("ScreenGui")
 gui.ResetOnSpawn = false
@@ -162,26 +158,26 @@ local function startfly()
     connection = RunService.RenderStepped:Connect(function()
         local hum = gethumanoid()
         local root = getroot()
-        if not hum or not root then return end
+        if not (hum and root) then return end
 
         status.Text = "Speed: " .. math.floor(flyspeed)
         hum.PlatformStand = true
 
         local move = hum.MoveDirection
         local camcf = camera.CFrame
-        local dir = camcf.RightVector * move.X + camcf.LookVector * move.Z
+        local dir = (camcf.RightVector * move.X) + (camcf.LookVector * move.Z)
 
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            dir += Vector3.new(0, 1, 0)
+            dir += Vector3.new(0,1,0)
         elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            dir -= Vector3.new(0, 1, 0)
+            dir -= Vector3.new(0,1,0)
         end
 
         if dir.Magnitude > 0 then
             local targetVel = dir.Unit * flyspeed
-            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(targetVel, 0.48)
+            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(targetVel, 0.5)
         else
-            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(Vector3.zero, 0.4)
+            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(Vector3.zero, 0.45)
         end
 
         root.AssemblyAngularVelocity = Vector3.zero
@@ -227,15 +223,15 @@ noclipbtn.MouseButton1Click:Connect(function()
 end)
 
 -- =========================
--- RESPAWN + EDGE CASE HANDLING
+-- RESPAWN
 -- =========================
-player.CharacterAdded:Connect(function(newChar)
-    task.wait(1.2)
-    originalCollide = {} -- reset
-
+player.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    originalCollide = {}
+    
     if flyenabled then
         stopfly()
-        task.wait(0.4)
+        task.wait(0.5)
         startfly()
         if noclipenabled then
             task.wait(0.3)
@@ -244,4 +240,4 @@ player.CharacterAdded:Connect(function(newChar)
     end
 end)
 
-print("Yang Kai Hub - Advanced Fly + Noclip Loaded")
+print("✅ Yang Kai Hub - Advanced Fly + Noclip Loaded Successfully!")
