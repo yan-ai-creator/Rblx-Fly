@@ -7,15 +7,14 @@ local camera = workspace.CurrentCamera
 
 local flyenabled = false
 local noclipenabled = false
-local flyspeed = 70          -- শুরুর স্পিড (তুমি চাইলে পরিবর্তন করতে পারো)
+local flyspeed = 65
 
 local flyConn = nil
 local noclipConn = nil
 local originalCollide = {}
 local minimized = false
 local dragging = false
-local dragStart
-local startPos
+local dragStart, startPos
 
 -- ====================== HELPERS ======================
 local function getChar() return player.Character end
@@ -53,7 +52,6 @@ end
 -- ====================== 6D FLIGHT ======================
 local function startFly()
     if flyConn then return end
-
     flyConn = RunService.RenderStepped:Connect(function()
         local hum = getHum()
         local root = getRoot()
@@ -63,17 +61,15 @@ local function startFly()
 
         local move = hum.MoveDirection
         local cf = camera.CFrame
-
         local forward = cf.LookVector
         local right = cf.RightVector
 
         local direction = (right * move.X) + (forward * move.Z)
 
         if direction.Magnitude > 0 then
-            local targetVel = direction.Unit * flyspeed
-            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(targetVel, 0.68)
+            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(direction.Unit * flyspeed, 0.7)
         else
-            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(Vector3.zero, 0.78)
+            root.AssemblyLinearVelocity = root.AssemblyLinearVelocity:Lerp(Vector3.zero, 0.8)
         end
 
         root.AssemblyAngularVelocity = Vector3.zero
@@ -104,11 +100,10 @@ frame.Parent = gui
 local titleBar = Instance.new("TextLabel")
 titleBar.Size = UDim2.new(1, 0, 0, 40)
 titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-titleBar.Text = "   YANG KAI HUB - 6D FLIGHT"
+titleBar.Text = "   YANG KAI HUB"
 titleBar.TextColor3 = Color3.fromRGB(255, 80, 80)
 titleBar.Font = Enum.Font.SourceSansBold
-titleBar.TextSize = 21
-titleBar.TextXAlignment = Enum.TextXAlignment.Left
+titleBar.TextSize = 22
 titleBar.Parent = frame
 
 local minimizeBtn = Instance.new("TextButton")
@@ -139,7 +134,7 @@ end)
 
 titleBar.InputEnded:Connect(function() dragging = false end)
 
--- Content Frame (Minimize এর জন্য)
+-- Content
 local content = Instance.new("Frame")
 content.Size = UDim2.new(1, 0, 1, -40)
 content.Position = UDim2.new(0, 0, 0, 40)
@@ -147,10 +142,10 @@ content.BackgroundTransparency = 1
 content.Parent = frame
 
 local status = Instance.new("TextLabel")
-status.Position = UDim2.new(0,0,0,5)
+status.Position = UDim2.new(0,0,0,8)
 status.Size = UDim2.new(1,0,0,30)
 status.BackgroundTransparency = 1
-status.Text = "Speed: 70"
+status.Text = "Speed: 65"
 status.TextColor3 = Color3.fromRGB(0,255,140)
 status.Font = Enum.Font.SourceSans
 status.TextSize = 18
@@ -158,7 +153,7 @@ status.Parent = content
 
 local function createBtn(text, yPos, color, callback)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 38)
+    btn.Size = UDim2.new(1, -20, 0, 40)
     btn.Position = UDim2.new(0, 10, 0, yPos)
     btn.BackgroundColor3 = color
     btn.Text = text
@@ -173,66 +168,4 @@ end
 -- Buttons
 local flybtn = createBtn("Fly: OFF", 45, Color3.fromRGB(60,60,60), function()
     flyenabled = not flyenabled
-    flybtn.Text = flyenabled and "Fly: ON" or "Fly: OFF"
-    flybtn.BackgroundColor3 = flyenabled and Color3.fromRGB(0,185,0) or Color3.fromRGB(60,60,60)
-    
-    if flyenabled then
-        startFly()
-        if noclipenabled then enableNoclip() end
-    else
-        stopFly()
-    end
-end)
-
-local noclipbtn = createBtn("NoClip: OFF", 90, Color3.fromRGB(60,60,60), function()
-    noclipenabled = not noclipenabled
-    noclipbtn.Text = noclipenabled and "NoClip: ON" or "NoClip: OFF"
-    noclipbtn.BackgroundColor3 = noclipenabled and Color3.fromRGB(0,185,0) or Color3.fromRGB(60,60,60)
-    if noclipenabled and flyenabled then enableNoclip() else disableNoclip() end
-end)
-
-createBtn("▲ UP Thrust", 140, Color3.fromRGB(0,110,200), function()
-    if flyenabled then
-        local root = getRoot()
-        if root then root.AssemblyLinearVelocity += Vector3.new(0, 45, 0) end
-    end
-end)
-
-createBtn("▼ DOWN Thrust", 185, Color3.fromRGB(200,90,0), function()
-    if flyenabled then
-        local root = getRoot()
-        if root then root.AssemblyLinearVelocity += Vector3.new(0, -45, 0) end
-    end
-end)
-
-createBtn("+25 Speed", 230, Color3.fromRGB(80,80,80), function() 
-    flyspeed += 25 
-    status.Text = "Speed: " .. flyspeed 
-end)
-
-createBtn("-25 Speed", 275, Color3.fromRGB(80,80,80), function() 
-    flyspeed = math.max(30, flyspeed - 25)
-    status.Text = "Speed: " .. flyspeed 
-end)
-
--- Minimize Logic
-minimizeBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    content.Visible = not minimized
-    frame.Size = minimized and UDim2.new(0, 300, 0, 45) or UDim2.new(0, 300, 0, 420)
-    minimizeBtn.Text = minimized and "+" or "-"
-end)
-
--- ====================== RESPAWN ======================
-player.CharacterAdded:Connect(function()
-    task.wait(1.5)
-    originalCollide = {}
-    if flyenabled then
-        stopFly()
-        task.wait(0.5)
-        startFly()
-        if noclipenabled then enableNoclip() end
-    end
-end)
-
-print("✅ Yang Kai Hub - Fully Fixed Version Loaded")
+    flybtn.Text = flyenabled and "Fly: ON" or "Fly: OFF
