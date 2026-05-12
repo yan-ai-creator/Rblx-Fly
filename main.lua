@@ -1,30 +1,36 @@
 -- ================================================================
---  YANG KAI HUB  |  v5.0 Mobile Final
+--  YANG KAI HUB  |  v1.0 Final Clean
+--  Mobile-only, entity-based fly, camera-direction, character lock
+--  Noclip restores original collision states (accessories safe)
+--  Unload button cleanly removes everything
 -- ================================================================
 
-local _gsvc = game.GetService
-local function svc(name) return _gsvc(game, name) end
-
-local Plrs  = svc("Players")
-local RS    = svc("RunService")
-local UIS   = svc("UserInputService")
-local Tween = svc("TweenService")
+local _g    = game.GetService
+local Plrs  = _g(game,"Players")
+local RS    = _g(game,"RunService")
+local UIS   = _g(game,"UserInputService")
+local Tween = _g(game,"TweenService")
 
 local lp  = Plrs.LocalPlayer
 local cam = workspace.CurrentCamera
 
-local cfg = { flySpeed=100, walkSpeed=16, jumpHeight=7.2 }
+local cfg = { flySpeed=150, walkSpeed=16, jumpHeight=7.2 }
 local st  = { fly=false, noclip=false, drag=false, mini=false, ds=nil, sp=nil }
-local ent = { lv=nil, att=nil }
-local flyConn=nil; local noclipConn=nil
+local origCollide = {}
+local ent        = { lv=nil, att=nil }
+local flyConn    = nil
+local noclipConn = nil
+local allConns   = {}
+local gui
 
 local function rn()
-    local t={}; for i=1,12 do t[i]=string.char(math.random(97,122)) end; return table.concat(t)
+    local t={}; for i=1,10 do t[i]=string.char(math.random(97,122)) end; return table.concat(t)
 end
 local function sf(fn) pcall(fn) end
 local function gc() return lp.Character end
 local function gh() local c=gc(); return c and c:FindFirstChildOfClass("Humanoid") end
 local function gr() local c=gc(); return c and c:FindFirstChild("HumanoidRootPart") end
+local function track(conn) allConns[#allConns+1]=conn; return conn end
 
 local function killEnt()
     sf(function()
@@ -52,7 +58,10 @@ local function noclipOn()
         sf(function()
             local c=gc(); if not c then return end
             for _,v in ipairs(c:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide=false end
+                if v:IsA("BasePart") then
+                    if origCollide[v]==nil then origCollide[v]=v.CanCollide end
+                    v.CanCollide=false
+                end
             end
         end)
     end)
@@ -61,10 +70,10 @@ end
 local function noclipOff()
     if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
     sf(function()
-        local c=gc(); if not c then return end
-        for _,v in ipairs(c:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide=true end
+        for part,original in pairs(origCollide) do
+            if part and part.Parent then part.CanCollide=original end
         end
+        origCollide={}
     end)
 end
 
@@ -81,7 +90,6 @@ local function flyOn()
             if not (h and root and lv and lv.Parent) then return end
             h.PlatformStand=true; h.AutoRotate=false
 
-            -- Hard-lock character: force CFrame upright every frame
             local cf=cam.CFrame
             local flatFwd=Vector3.new(cf.LookVector.X,0,cf.LookVector.Z)
             if flatFwd.Magnitude>0.01 then
@@ -91,7 +99,6 @@ local function flyOn()
                 root.CFrame=CFrame.new(root.Position)*CFrame.fromEulerAnglesYXZ(0,y,0)
             end
 
-            -- Camera-direction fly
             local moveDir=h.MoveDirection
             if moveDir.Magnitude>0.05 then
                 local hFwd=Vector3.new(cf.LookVector.X,0,cf.LookVector.Z)
@@ -117,7 +124,8 @@ local function flyOff()
     if flyConn then flyConn:Disconnect(); flyConn=nil end
     sf(function()
         if ent.lv and ent.lv.Parent then ent.lv.VectorVelocity=Vector3.zero end
-        local h=gh(); if h then h.PlatformStand=false; h.AutoRotate=true end
+        local h=gh()
+        if h then h.PlatformStand=false; h.AutoRotate=true end
     end)
     killEnt()
     if not st.noclip then noclipOff() end
@@ -126,33 +134,54 @@ end
 local function applyWalk() sf(function() local h=gh(); if h then h.WalkSpeed=cfg.walkSpeed end end) end
 local function applyJump() sf(function() local h=gh(); if h then h.JumpHeight=cfg.jumpHeight end end) end
 
+local function unload()
+    if flyConn then flyConn:Disconnect(); flyConn=nil end
+    if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
+    for _,c in ipairs(allConns) do sf(function() c:Disconnect() end) end
+    for part,orig in pairs(origCollide) do
+        sf(function() if part and part.Parent then part.CanCollide=orig end end)
+    end
+    origCollide={}
+    sf(function()
+        killEnt()
+        local h=gh()
+        if h then h.PlatformStand=false; h.AutoRotate=true; h.WalkSpeed=16; h.JumpHeight=7.2 end
+    end)
+    sf(function() if gui and gui.Parent then gui:Destroy() end end)
+end
+
 local function onSpawn(char)
     sf(function()
-        char:WaitForChild("HumanoidRootPart",10); char:WaitForChild("Humanoid",10)
-        task.wait(0.6); applyWalk(); applyJump()
+        char:WaitForChild("HumanoidRootPart",10)
+        char:WaitForChild("Humanoid",10)
+        task.wait(0.6)
+        applyWalk(); applyJump()
         if st.noclip then noclipOn() end
         if st.fly then killEnt(); flyOn() end
     end)
 end
-lp.CharacterAdded:Connect(onSpawn)
+track(lp.CharacterAdded:Connect(onSpawn))
 if lp.Character then task.spawn(onSpawn, lp.Character) end
 
 -- ================================================================
 --  GUI
 -- ================================================================
 
-local FW=300; local FH=510; local FM=48; local P=10
+local FW=300; local FH=560; local FM=48; local P=10
 
-local gui=Instance.new("ScreenGui")
+gui=Instance.new("ScreenGui")
 gui.Name=rn(); gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
 gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
 gui.Parent=lp:WaitForChild("PlayerGui")
 
 local frame=Instance.new("Frame")
-frame.Name=rn(); frame.Size=UDim2.new(0,FW,0,FH); frame.Position=UDim2.new(0,18,0.06,0)
-frame.BackgroundColor3=Color3.fromRGB(11,11,11); frame.BorderSizePixel=0; frame.Parent=gui
+frame.Name=rn(); frame.Size=UDim2.new(0,FW,0,FH)
+frame.Position=UDim2.new(0,18,0.05,0)
+frame.BackgroundColor3=Color3.fromRGB(11,11,11)
+frame.BorderSizePixel=0; frame.Parent=gui
 Instance.new("UICorner",frame).CornerRadius=UDim.new(0,14)
-do local s=Instance.new("UIStroke",frame); s.Color=Color3.fromRGB(200,35,35); s.Thickness=1.5; s.Transparency=0.4 end
+do local s=Instance.new("UIStroke",frame)
+    s.Color=Color3.fromRGB(200,35,35); s.Thickness=1.5; s.Transparency=0.4 end
 
 local tbar=Instance.new("Frame")
 tbar.Size=UDim2.new(1,0,0,48); tbar.BackgroundColor3=Color3.fromRGB(18,18,18)
@@ -165,36 +194,39 @@ stripe.BackgroundColor3=Color3.fromRGB(220,35,35); stripe.BorderSizePixel=0; str
 Instance.new("UICorner",stripe).CornerRadius=UDim.new(1,0)
 
 local tLbl=Instance.new("TextLabel")
-tLbl.Size=UDim2.new(1,-60,1,0); tLbl.Position=UDim2.new(0,23,0,0)
+tLbl.Size=UDim2.new(1,-90,1,0); tLbl.Position=UDim2.new(0,23,0,0)
 tLbl.BackgroundTransparency=1; tLbl.Text="YANG KAI HUB"
 tLbl.TextColor3=Color3.fromRGB(240,240,240); tLbl.Font=Enum.Font.GothamBold
 tLbl.TextSize=17; tLbl.TextXAlignment=Enum.TextXAlignment.Left; tLbl.Parent=tbar
 
 local vLbl=Instance.new("TextLabel")
 vLbl.Size=UDim2.new(0,90,0,13); vLbl.Position=UDim2.new(0,23,1,-15)
-vLbl.BackgroundTransparency=1; vLbl.Text="v5.0 Mobile"
+vLbl.BackgroundTransparency=1; vLbl.Text="v1.0 Mobile"
 vLbl.TextColor3=Color3.fromRGB(200,35,35); vLbl.Font=Enum.Font.Gotham
 vLbl.TextSize=11; vLbl.TextXAlignment=Enum.TextXAlignment.Left; vLbl.Parent=tbar
 
 local minBtn=Instance.new("TextButton")
 minBtn.Size=UDim2.new(0,36,0,36); minBtn.Position=UDim2.new(1,-43,0.5,-18)
-minBtn.BackgroundColor3=Color3.fromRGB(200,35,35); minBtn.Text="—"
+minBtn.BackgroundColor3=Color3.fromRGB(55,55,55); minBtn.Text="—"
 minBtn.TextColor3=Color3.new(1,1,1); minBtn.TextSize=17; minBtn.Font=Enum.Font.GothamBold
 minBtn.BorderSizePixel=0; minBtn.Parent=tbar
 Instance.new("UICorner",minBtn).CornerRadius=UDim.new(0,8)
 
-tbar.InputBegan:Connect(function(i)
-    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-        st.drag=true; st.ds=i.Position; st.sp=frame.Position end end)
-UIS.InputChanged:Connect(function(i)
+track(tbar.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1
+    or i.UserInputType==Enum.UserInputType.Touch then
+        st.drag=true; st.ds=i.Position; st.sp=frame.Position end end))
+track(UIS.InputChanged:Connect(function(i)
     if not st.drag then return end
-    if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
+    if i.UserInputType==Enum.UserInputType.MouseMovement
+    or i.UserInputType==Enum.UserInputType.Touch then
         local d=i.Position-st.ds
-        frame.Position=UDim2.new(st.sp.X.Scale,st.sp.X.Offset+d.X,st.sp.Y.Scale,st.sp.Y.Offset+d.Y)
-    end end)
-UIS.InputEnded:Connect(function(i)
-    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-        st.drag=false end end)
+        frame.Position=UDim2.new(st.sp.X.Scale,st.sp.X.Offset+d.X,
+            st.sp.Y.Scale,st.sp.Y.Offset+d.Y) end end))
+track(UIS.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1
+    or i.UserInputType==Enum.UserInputType.Touch then
+        st.drag=false end end))
 
 local cont=Instance.new("Frame")
 cont.Size=UDim2.new(1,0,1,-48); cont.Position=UDim2.new(0,0,0,48)
@@ -204,7 +236,8 @@ local toast=Instance.new("TextLabel")
 toast.Size=UDim2.new(1,-20,0,28); toast.Position=UDim2.new(0,10,0,6)
 toast.BackgroundColor3=Color3.fromRGB(200,35,35); toast.TextColor3=Color3.new(1,1,1)
 toast.Font=Enum.Font.GothamBold; toast.TextSize=13; toast.Text=""
-toast.BorderSizePixel=0; toast.BackgroundTransparency=1; toast.TextTransparency=1; toast.Parent=cont
+toast.BorderSizePixel=0; toast.BackgroundTransparency=1; toast.TextTransparency=1
+toast.Parent=cont
 Instance.new("UICorner",toast).CornerRadius=UDim.new(0,7)
 
 local tThr=nil
@@ -212,7 +245,8 @@ local function notify(msg)
     if tThr then task.cancel(tThr) end
     toast.Text="  "..msg; toast.BackgroundTransparency=0; toast.TextTransparency=0
     tThr=task.delay(2.2,function()
-        Tween:Create(toast,TweenInfo.new(0.35),{BackgroundTransparency=1,TextTransparency=1}):Play()
+        Tween:Create(toast,TweenInfo.new(0.35),
+            {BackgroundTransparency=1,TextTransparency=1}):Play()
     end)
 end
 
@@ -224,33 +258,43 @@ sbar.TextXAlignment=Enum.TextXAlignment.Left; sbar.Parent=cont
 Instance.new("UICorner",sbar).CornerRadius=UDim.new(0,7)
 
 local function updStat()
-    sbar.Text=string.format("  Fly: %s  |  NoClip: %s  |  FlySpd: %d  |  Walk: %d",
-        st.fly and "ON" or "OFF", st.noclip and "ON" or "OFF", cfg.flySpeed, cfg.walkSpeed)
+    sbar.Text=string.format(
+        "  Fly: %s  |  NoClip: %s  |  FlySpd: %d  |  Walk: %d",
+        st.fly and "ON" or "OFF",
+        st.noclip and "ON" or "OFF",
+        cfg.flySpeed, cfg.walkSpeed)
 end
 
 local function div(y,lbl)
-    local r=Instance.new("Frame"); r.Size=UDim2.new(1,-20,0,18); r.Position=UDim2.new(0,10,0,y)
+    local r=Instance.new("Frame")
+    r.Size=UDim2.new(1,-20,0,18); r.Position=UDim2.new(0,10,0,y)
     r.BackgroundTransparency=1; r.Parent=cont
-    local l=Instance.new("Frame"); l.Size=UDim2.new(1,0,0,1); l.Position=UDim2.new(0,0,0.5,0)
+    local l=Instance.new("Frame")
+    l.Size=UDim2.new(1,0,0,1); l.Position=UDim2.new(0,0,0.5,0)
     l.BackgroundColor3=Color3.fromRGB(38,38,38); l.BorderSizePixel=0; l.Parent=r
-    if lbl then
-        local t=Instance.new("TextLabel"); t.Size=UDim2.new(0,110,1,0); t.Position=UDim2.new(0,8,0,0)
-        t.BackgroundColor3=Color3.fromRGB(11,11,11); t.TextColor3=Color3.fromRGB(200,35,35)
-        t.Font=Enum.Font.GothamBold; t.TextSize=11; t.Text="  "..lbl.."  "; t.BorderSizePixel=0; t.Parent=r
+    if lbl and lbl~="" then
+        local t=Instance.new("TextLabel")
+        t.Size=UDim2.new(0,110,1,0); t.Position=UDim2.new(0,8,0,0)
+        t.BackgroundColor3=Color3.fromRGB(11,11,11)
+        t.TextColor3=Color3.fromRGB(200,35,35)
+        t.Font=Enum.Font.GothamBold; t.TextSize=11
+        t.Text="  "..lbl.."  "; t.BorderSizePixel=0; t.Parent=r
     end
 end
 
 local function mkToggle(label,y)
     local btn=Instance.new("TextButton")
     btn.Size=UDim2.new(1,-20,0,50); btn.Position=UDim2.new(0,10,0,y)
-    btn.BackgroundColor3=Color3.fromRGB(26,26,26); btn.Text=""
+    btn.BackgroundColor3=Color3.fromRGB(24,24,24); btn.Text=""
     btn.BorderSizePixel=0; btn.Parent=cont
     Instance.new("UICorner",btn).CornerRadius=UDim.new(0,11)
-    do local s=Instance.new("UIStroke",btn); s.Color=Color3.fromRGB(42,42,42); s.Thickness=1 end
+    do local s=Instance.new("UIStroke",btn)
+        s.Color=Color3.fromRGB(40,40,40); s.Thickness=1 end
     local lb=Instance.new("TextLabel")
     lb.Size=UDim2.new(1,-65,1,0); lb.Position=UDim2.new(0,14,0,0)
-    lb.BackgroundTransparency=1; lb.Text=label; lb.TextColor3=Color3.fromRGB(200,200,200)
-    lb.Font=Enum.Font.GothamBold; lb.TextSize=16; lb.TextXAlignment=Enum.TextXAlignment.Left; lb.Parent=btn
+    lb.BackgroundTransparency=1; lb.Text=label
+    lb.TextColor3=Color3.fromRGB(200,200,200); lb.Font=Enum.Font.GothamBold
+    lb.TextSize=16; lb.TextXAlignment=Enum.TextXAlignment.Left; lb.Parent=btn
     local pill=Instance.new("Frame")
     pill.Size=UDim2.new(0,46,0,26); pill.Position=UDim2.new(1,-58,0.5,-13)
     pill.BackgroundColor3=Color3.fromRGB(48,48,48); pill.BorderSizePixel=0; pill.Parent=btn
@@ -260,95 +304,153 @@ local function mkToggle(label,y)
     dot.BackgroundColor3=Color3.fromRGB(90,90,90); dot.BorderSizePixel=0; dot.Parent=pill
     Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
     local function setOn(on)
-        Tween:Create(pill,TweenInfo.new(0.14),{BackgroundColor3=on and Color3.fromRGB(18,158,65) or Color3.fromRGB(48,48,48)}):Play()
-        Tween:Create(dot,TweenInfo.new(0.14),{BackgroundColor3=on and Color3.new(1,1,1) or Color3.fromRGB(90,90,90),
-            Position=on and UDim2.new(1,-23,0.5,-10) or UDim2.new(0,3,0.5,-10)}):Play()
+        Tween:Create(pill,TweenInfo.new(0.14),{
+            BackgroundColor3=on and Color3.fromRGB(18,158,65) or Color3.fromRGB(48,48,48)
+        }):Play()
+        Tween:Create(dot,TweenInfo.new(0.14),{
+            BackgroundColor3=on and Color3.new(1,1,1) or Color3.fromRGB(90,90,90),
+            Position=on and UDim2.new(1,-23,0.5,-10) or UDim2.new(0,3,0.5,-10)
+        }):Play()
         lb.TextColor3=on and Color3.new(1,1,1) or Color3.fromRGB(200,200,200)
     end
-    return btn, setOn
+    return btn,setOn
 end
 
 local function mkBtn(txt,x,w,y,par)
     par=par or cont
-    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,w,0,42); b.Position=UDim2.new(0,x,0,y)
-    b.BackgroundColor3=Color3.fromRGB(26,26,26); b.Text=txt; b.TextColor3=Color3.fromRGB(220,220,220)
-    b.Font=Enum.Font.GothamBold; b.TextSize=15; b.BorderSizePixel=0; b.Parent=par
+    local b=Instance.new("TextButton")
+    b.Size=UDim2.new(0,w,0,42); b.Position=UDim2.new(0,x,0,y)
+    b.BackgroundColor3=Color3.fromRGB(24,24,24); b.Text=txt
+    b.TextColor3=Color3.fromRGB(220,220,220); b.Font=Enum.Font.GothamBold
+    b.TextSize=15; b.BorderSizePixel=0; b.Parent=par
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,9)
-    do local s=Instance.new("UIStroke",b); s.Color=Color3.fromRGB(42,42,42); s.Thickness=1 end
+    do local s=Instance.new("UIStroke",b)
+        s.Color=Color3.fromRGB(40,40,40); s.Thickness=1 end
     return b
 end
 
 local function mkVal(x,w,y,par)
     par=par or cont
-    local d=Instance.new("TextLabel"); d.Size=UDim2.new(0,w,0,42); d.Position=UDim2.new(0,x,0,y)
+    local d=Instance.new("TextLabel")
+    d.Size=UDim2.new(0,w,0,42); d.Position=UDim2.new(0,x,0,y)
     d.BackgroundColor3=Color3.fromRGB(18,18,18); d.TextColor3=Color3.fromRGB(0,210,100)
     d.Font=Enum.Font.GothamBold; d.TextSize=19; d.BorderSizePixel=0; d.Parent=par
     Instance.new("UICorner",d).CornerRadius=UDim.new(0,9)
-    do local s=Instance.new("UIStroke",d); s.Color=Color3.fromRGB(0,70,38); s.Thickness=1 end
+    do local s=Instance.new("UIStroke",d)
+        s.Color=Color3.fromRGB(0,70,38); s.Thickness=1 end
     return d
 end
 
 local function rowLbl(txt,y,par)
     par=par or cont
-    local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,-20,0,14); l.Position=UDim2.new(0,P,0,y)
-    l.BackgroundTransparency=1; l.Text=txt; l.TextColor3=Color3.fromRGB(200,35,35)
-    l.Font=Enum.Font.GothamBold; l.TextSize=11; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=par
+    local l=Instance.new("TextLabel")
+    l.Size=UDim2.new(1,-20,0,14); l.Position=UDim2.new(0,P,0,y)
+    l.BackgroundTransparency=1; l.Text=txt
+    l.TextColor3=Color3.fromRGB(200,35,35); l.Font=Enum.Font.GothamBold
+    l.TextSize=11; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=par
 end
 
-local BIG=54; local SM=46; local GAP=4
+local BIG=52; local SM=44; local GAP=4
 local VAL_W=(FW-20)-2*BIG-2*SM-4*GAP
 
 local function buildRow(y,getV,setV,bigStep,smStep,mn,mx,fmt,par)
     par=par or cont; fmt=fmt or "%d"
     local x0=P; local xS1=x0+BIG+GAP; local xV=xS1+SM+GAP
     local xS2=xV+VAL_W+GAP; local xB2=xS2+SM+GAP
-    local disp=mkVal(xV,VAL_W,y,par); disp.Text=string.format(fmt,getV())
+    local disp=mkVal(xV,VAL_W,y,par)
+    disp.Text=string.format(fmt,getV())
     local function ref() disp.Text=string.format(fmt,getV()); updStat() end
-    local b1=mkBtn("−"..bigStep,x0,BIG,y,par); local b2=mkBtn("−"..smStep,xS1,SM,y,par)
-    local b3=mkBtn("+"..smStep,xS2,SM,y,par);  local b4=mkBtn("+"..bigStep,xB2,BIG,y,par)
-    b1.BackgroundColor3=Color3.fromRGB(35,20,20); b4.BackgroundColor3=Color3.fromRGB(18,35,22)
-    b1.TextColor3=Color3.fromRGB(255,100,100);    b4.TextColor3=Color3.fromRGB(80,220,120)
-    b2.TextColor3=Color3.fromRGB(220,150,150);    b3.TextColor3=Color3.fromRGB(120,220,160)
+    local b1=mkBtn("−"..bigStep,x0,BIG,y,par)
+    local b2=mkBtn("−"..smStep,xS1,SM,y,par)
+    local b3=mkBtn("+"..smStep,xS2,SM,y,par)
+    local b4=mkBtn("+"..bigStep,xB2,BIG,y,par)
+    b1.BackgroundColor3=Color3.fromRGB(38,18,18)
+    b4.BackgroundColor3=Color3.fromRGB(16,36,20)
+    b1.TextColor3=Color3.fromRGB(255,90,90)
+    b4.TextColor3=Color3.fromRGB(70,225,115)
+    b2.TextColor3=Color3.fromRGB(220,140,140)
+    b3.TextColor3=Color3.fromRGB(110,220,155)
     b1.MouseButton1Click:Connect(function() setV(math.clamp(getV()-bigStep,mn,mx)); ref() end)
     b2.MouseButton1Click:Connect(function() setV(math.clamp(getV()-smStep, mn,mx)); ref() end)
     b3.MouseButton1Click:Connect(function() setV(math.clamp(getV()+smStep, mn,mx)); ref() end)
     b4.MouseButton1Click:Connect(function() setV(math.clamp(getV()+bigStep,mn,mx)); ref() end)
-    return disp
 end
 
+-- ── Layout ──────────────────────────────────────────────────────
+
 div(76,"MOVEMENT")
-local flyBtn,flySet=mkToggle("Fly",98)
-local nBtn,nSet=mkToggle("NoClip",154)
+local flyBtn,flySet = mkToggle("Fly",98)
+local nBtn,nSet     = mkToggle("NoClip",154)
 
 local fSec=Instance.new("Frame")
 fSec.Size=UDim2.new(1,0,0,62); fSec.Position=UDim2.new(0,0,0,210)
 fSec.BackgroundTransparency=1; fSec.Visible=false; fSec.Parent=cont
-rowLbl("FLY SPEED  (studs/sec)",0,fSec)
-buildRow(16,function() return cfg.flySpeed end,function(v) cfg.flySpeed=v end,200,50,10,2000,"%d",fSec)
+
+rowLbl("FLY SPEED",0,fSec)
+buildRow(16,
+    function() return cfg.flySpeed end,
+    function(v) cfg.flySpeed=v end,
+    100,25, 10,3000, "%d", fSec)
 
 div(278,"CHARACTER")
 rowLbl("WALK SPEED",298)
-buildRow(314,function() return cfg.walkSpeed end,function(v) cfg.walkSpeed=v; applyWalk() end,20,5,1,500,"%d")
+buildRow(314,
+    function() return cfg.walkSpeed end,
+    function(v) cfg.walkSpeed=v; applyWalk() end,
+    10,5, 1,500, "%d")
+
 rowLbl("JUMP HEIGHT",362)
-buildRow(378,function() return cfg.jumpHeight end,function(v) cfg.jumpHeight=v; applyJump() end,5,1,1,200,"%.1f")
+buildRow(378,
+    function() return cfg.jumpHeight end,
+    function(v) cfg.jumpHeight=v; applyJump() end,
+    5,1, 1,200, "%.1f")
+
+div(428,"")
+
+local unloadBtn=Instance.new("TextButton")
+unloadBtn.Size=UDim2.new(1,-20,0,44)
+unloadBtn.Position=UDim2.new(0,10,0,450)
+unloadBtn.BackgroundColor3=Color3.fromRGB(38,15,15)
+unloadBtn.Text="✕  Unload Script"
+unloadBtn.TextColor3=Color3.fromRGB(255,80,80)
+unloadBtn.Font=Enum.Font.GothamBold; unloadBtn.TextSize=15
+unloadBtn.BorderSizePixel=0; unloadBtn.Parent=cont
+Instance.new("UICorner",unloadBtn).CornerRadius=UDim.new(0,10)
+do local s=Instance.new("UIStroke",unloadBtn)
+    s.Color=Color3.fromRGB(140,30,30); s.Thickness=1 end
+
+unloadBtn.MouseButton1Click:Connect(function()
+    notify("Unloading..."); task.wait(0.4); unload()
+end)
 
 flyBtn.MouseButton1Click:Connect(function()
     st.fly=not st.fly; flySet(st.fly); fSec.Visible=st.fly
-    if st.fly then flyOn(); if st.noclip then noclipOn() end; notify("Fly ON — character locked")
-    else flyOff(); notify("Fly OFF — gravity restored") end; updStat()
+    if st.fly then
+        flyOn()
+        if st.noclip then noclipOn() end
+        notify("Fly ON — character locked")
+    else
+        flyOff()
+        notify("Fly OFF — gravity restored")
+    end
+    updStat()
 end)
 
 nBtn.MouseButton1Click:Connect(function()
     st.noclip=not st.noclip; nSet(st.noclip)
     if st.noclip then noclipOn() else noclipOff() end
-    notify(st.noclip and "NoClip ON" or "NoClip OFF"); updStat()
+    notify(st.noclip and "NoClip ON" or "NoClip OFF — collision restored")
+    updStat()
 end)
 
 minBtn.MouseButton1Click:Connect(function()
-    st.mini=not st.mini; local h=st.mini and FM or FH
-    Tween:Create(frame,TweenInfo.new(0.18,Enum.EasingStyle.Quart),{Size=UDim2.new(0,FW,0,h)}):Play()
-    cont.Visible=not st.mini; minBtn.Text=st.mini and "+" or "—"
+    st.mini=not st.mini
+    local h=st.mini and FM or FH
+    Tween:Create(frame,TweenInfo.new(0.18,Enum.EasingStyle.Quart),
+        {Size=UDim2.new(0,FW,0,h)}):Play()
+    cont.Visible=not st.mini
+    minBtn.Text=st.mini and "+" or "—"
 end)
 
 updStat()
-notify("Yang Kai Hub v5.0 Mobile loaded!")
+notify("Yang Kai Hub v1.0 loaded!")
